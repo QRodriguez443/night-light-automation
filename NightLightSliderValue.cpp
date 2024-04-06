@@ -51,8 +51,9 @@ Result getSliderValue() {
         }
         std::cerr << "Error finding Settings app window" << std::endl;
     }
-    // Move the window out of the way
-    SetWindowPos(hwnd, NULL, -500, -500, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+    // Move the window out of the way!
+    SetWindowPos(hwnd, NULL, -500, -500, 10, 10, SWP_HIDEWINDOW);
+    SetWindowPos(hwnd, NULL, -500, -500, 10, 10, SWP_HIDEWINDOW);
 
     CoInitialize(NULL);
 
@@ -99,6 +100,16 @@ Result getSliderValue() {
 
     IUIAutomationElement* pElement2;
     pElement->FindFirst(TreeScope_Children, newAuto2, &pElement2);
+    if (!pElement2) {
+        std::cerr << "Error finding group element, retrying..." << std::endl;
+
+        while (true) {
+            root->FindFirst(TreeScope_Children, newAuto, &pElement);
+            if (pElement) {
+                break;
+            }
+        }
+    }
     //PANE ELEMENT
     VARIANT panePropc;
     panePropc.vt = VT_BSTR;
@@ -252,6 +263,8 @@ void changeSliderValue() {
             //If the programmatic value is equal to the target value after i = 30, then update is successful
             if (i == 35) {
                 if (sliderPropcInt == newValueToInt) {
+                    slider->GetCurrentPattern(UIA_RangeValuePatternId, (IUnknown**)&pValuePattern);
+                    pValuePattern->SetValue(newValue); // Double-set to ensure screen updates UI
                     break;
                 }
                 else { 
