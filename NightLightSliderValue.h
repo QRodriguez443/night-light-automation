@@ -5,7 +5,7 @@
 #include "Result.h"
 #include "Point.h"
 
-Result getSliderValue();
+Result getSliderValue(double newValue);
 
 void changeSliderValue();
 

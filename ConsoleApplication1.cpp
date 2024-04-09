@@ -80,15 +80,15 @@ int main() {
         }
         if (time.hour >= 22 || time.hour == 0 && time.hour <= 7) {
             std::wcout << L"Condition met, executing function..." << std::endl;
-            if (timeToSleep != 3600000) {
-                timeToSleep = 3600000; // 1 hour
+            if (timeToSleep != 1800000) {
+                timeToSleep = 1800000; // 30 mins
             }
             conditionIsMet = 1;
             changeSliderValue();
             }
 
         if (conditionIsMet == 0) { // Skip this block if any of the above statements were executed
-            Result value = getSliderValue();
+            Result value = getSliderValue(NULL);
             int result = value.value;
             HWND returnedHwnd = value.hwnd;
             timeToSleep = 300000; //5 minutes

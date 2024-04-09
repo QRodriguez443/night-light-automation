@@ -1,10 +1,24 @@
-#define UNICODE
+#include <windows.h>
 #include "NightLightSliderValue.h"
 #include "TimeDetection.h"
 #include <UIAutomation.h>
 #include <iostream>
 #include <io.h>
 #include <fcntl.h>
+
+void PressKey(int keyCode) {
+    INPUT input = { 0 };
+    input.type = INPUT_KEYBOARD;
+    input.ki.wVk = keyCode; // virtual key code of the key to press
+    input.ki.dwFlags = 0; // 0 for key press
+    SendInput(1, &input, sizeof(INPUT));
+
+    ZeroMemory(&input, sizeof(INPUT));
+    input.type = INPUT_KEYBOARD;
+    input.ki.wVk = keyCode;
+    input.ki.dwFlags = KEYEVENTF_KEYUP; // KEYEVENTF_KEYUP for key release
+    SendInput(1, &input, sizeof(INPUT));
+}
 
 int createNewWindow() {
     // Create a new console window.
@@ -36,24 +50,23 @@ int createNewWindow() {
 ////
 
 //Open settings to night light page and get current slider value
-Result getSliderValue() {
+Result getSliderValue(double newValue) {
     bool windowHide = false;
-
-    // Launch the Settings app to the Night Light page
-    ShellExecuteW(NULL, L"open", L"ms-settings:nightlight", NULL, NULL, SW_HIDE);
+    HWND hwnd = NULL;
 
     // Get the top-level window of the Settings app
-    HWND hwnd = FindWindowW(L"ApplicationFrameWindow", L"Settings");
-    if (!hwnd) {
-        if (!windowHide) {
-            windowHide = FreeConsole() != 0;
-            createNewWindow();
+    for (int i = 0; i <= 4; i++) {
+        hwnd = FindWindowW(L"ApplicationFrameWindow", L"Settings");
+        if (!hwnd) {
+            // Launch the Settings app to the Night Light page
+            ShellExecuteW(NULL, L"open", L"ms-settings:nightlight", NULL, NULL, SW_NORMAL);
+            std::cerr << "Error finding Settings app window, resolving..." << std::endl;
+        } else {
+            // Move the window out of the way!
+            SetWindowPos(hwnd, NULL, -500, -500, 10, 10, SW_NORMAL);
+            break;
         }
-        std::cerr << "Error finding Settings app window" << std::endl;
     }
-    // Move the window out of the way!
-    SetWindowPos(hwnd, NULL, -500, -500, 10, 10, SWP_HIDEWINDOW);
-    SetWindowPos(hwnd, NULL, -500, -500, 10, 10, SWP_HIDEWINDOW);
 
     CoInitialize(NULL);
 
@@ -79,15 +92,17 @@ Result getSliderValue() {
     op->CreatePropertyCondition(UIA_ClassNamePropertyId, otherProp, &newAuto);
 
     IUIAutomationElement* pElement;
-    root->FindFirst(TreeScope_Children, newAuto, &pElement);
-    if (!pElement) {
-        std::wcout << L"Element not found, retrying..." << std::endl;
+    while (true) {
+        root->FindFirst(TreeScope_Children, newAuto, &pElement);
+        if (!pElement) {
+            std::wcout << L"Element not found, retrying..." << std::endl;
 
-        while (true) {
             root->FindFirst(TreeScope_Children, newAuto, &pElement);
             if (pElement) {
                 break;
             }
+        } else {
+            break;
         }
     }
     //GROUP ELEMENT
@@ -99,15 +114,17 @@ Result getSliderValue() {
     op->CreatePropertyCondition(UIA_LocalizedControlTypePropertyId, groupProp, &newAuto2);
 
     IUIAutomationElement* pElement2;
-    pElement->FindFirst(TreeScope_Children, newAuto2, &pElement2);
-    if (!pElement2) {
-        std::cerr << "Error finding group element, retrying..." << std::endl;
+    while (true) {
+        pElement->FindFirst(TreeScope_Children, newAuto2, &pElement2);
+        if (!pElement2) {
+            std::cerr << "Error finding group element, retrying..." << std::endl;
 
-        while (true) {
-            root->FindFirst(TreeScope_Children, newAuto, &pElement);
-            if (pElement) {
+            pElement->FindFirst(TreeScope_Children, newAuto2, &pElement2);
+            if (pElement2) {
                 break;
             }
+        } else {
+            break;
         }
     }
     //PANE ELEMENT
@@ -143,13 +160,18 @@ Result getSliderValue() {
     std::wcout << "Slider element: " << "ValueValueId: " << sliderPropc.bstrVal << std::endl;
     int sliderPropcInt = _wtoi(sliderPropc.bstrVal);
 
+    if (newValue != NULL) {
+        pValuePattern->SetValue(newValue); // Change slider value to target value
+    }
     Result result;
     result.hwnd = hwnd;
     result.value = (sliderPropcInt < 60) ? 1 : 0;
-    result.pValuePattern = pValuePattern;
-    result.slider = slider;
+    result.sliderValue = sliderPropcInt;
 
     //Clean up
+    SysFreeString(sliderPropc.bstrVal);
+    pValuePattern->Release();
+    slider->Release();
     sliderCondition->Release();
     pane->Release();
     paneCondition->Release();
@@ -159,7 +181,6 @@ Result getSliderValue() {
     newAuto->Release();
     root->Release();
     op->Release();
-    SysFreeString(sliderPropc.bstrVal);
 
     return result;
 }
@@ -168,28 +189,22 @@ Result getSliderValue() {
 void changeSliderValue() {
     Point time = timeDetection(); //Get current time of day
 
-    Result value = getSliderValue();
+    Result value = getSliderValue(NULL);
 
     //Returned values from getSliderValue()
     HWND returnedHwnd = value.hwnd;
-    IRangeValueProvider* pValuePattern = value.pValuePattern;
-    IUIAutomationElement* slider = value.slider;
+    int sliderPropcInt = value.sliderValue;
 
-    VARIANT sliderPropc;
-    sliderPropc.vt = VT_BSTR;
-    slider->GetCurrentPropertyValue(UIA_ValueValuePropertyId, &sliderPropc);
-    std::wcout << "Slider element: " << "ValueValueId: " << sliderPropc.bstrVal << std::endl;
-    int sliderPropcPrevious = _wtoi(sliderPropc.bstrVal);
+    std::wcout << "Slider element: " << "ValueValueId: " << sliderPropcInt << std::endl;
 
     double newValue = { 0 };
-    bool skipNext = false; //Used to skip the code that sets slider value
-    int sliderPropcInt = _wtoi(sliderPropc.bstrVal);
+    bool skipNext = false; // Used to skip the code that sets slider value
 
-    for (int i = 0; i <= 8; i++) {
-        slider->GetCurrentPropertyValue(UIA_ValueValuePropertyId, &sliderPropc);
-        sliderPropcInt = _wtoi(sliderPropc.bstrVal); //In case the loop iterates more than once
+
+    for (int i = 0; i <= 5; i++) {
         skipNext = false;
         bool valueSet = false; //Used to determine if newValue is 0
+        value = getSliderValue(NULL); // Run the function again to update the slider value
 
         //Determine what value to set night light
         // 20 == 8pm, if less than or equal to 8:30pm, 
@@ -238,51 +253,20 @@ void changeSliderValue() {
         }
         else {
             std::wcout << newValue << "not setting properly, current value: " << sliderPropcInt << std::endl;
-            if (i == 3) {
-                skipNext = true;
-                std::wcout << L"No reason to attempt change, slider value already correct..." << std::endl;
-            }
         }
     }
     //Gets the current slider value, then manipulates it
     if (skipNext != true) {
-        int newValueToInt = static_cast<int>(newValue);
-        pValuePattern->SetValue(newValue);
-
-        SysFreeString(sliderPropc.bstrVal);
-
-        /*The excess iterations ensure the current property retrieved is the updated programmatic
-        value and not the previous value, as there is a short delay when changing the value.*/
-        for (int i = 0; i <= 40; i++) {
-            VARIANT sliderPropc;
-            sliderPropc.vt = VT_BSTR;
-            slider->GetCurrentPropertyValue(UIA_ValueValuePropertyId, &sliderPropc);
-            std::wcout << "Current programmatic slider value: " << sliderPropc.bstrVal << ", target value: " << newValueToInt << std::endl;
-            int sliderPropcInt = _wtoi(sliderPropc.bstrVal);
-
-            //If the programmatic value is equal to the target value after i = 30, then update is successful
-            if (i == 35) {
-                if (sliderPropcInt == newValueToInt) {
-                    slider->GetCurrentPattern(UIA_RangeValuePatternId, (IUnknown**)&pValuePattern);
-                    pValuePattern->SetValue(newValue); // Double-set to ensure screen updates UI
-                    break;
-                }
-                else { 
-                    std::wcout << L"Wtf! The update failed..." << std::endl; 
-                }
-            }
-            else if (i == 40) { //In case loop is unbreakable
-                break;
-            }
-        }
+        int newValueToInt = static_cast<int>(newValue); // Convert double to int for logging
+        //PressKey(0x09);
+        //Sleep(500);
+        //PressKey(0x27);
+        //Sleep(500);
+        
+        value = getSliderValue(newValue);
+        std::wcout << "Current programmatic slider value: " << sliderPropcInt << ", target value: " << newValueToInt << std::endl;
     }
-
-    SendMessageW(returnedHwnd, WM_CLOSE, 0, 0);
-
-    //Clean up
-    slider->Release();
-    pValuePattern->Release();
-    SysFreeString(sliderPropc.bstrVal);
+    SendMessageW(returnedHwnd, WM_CLOSE, NULL, NULL);
 
     CoUninitialize();
 }
