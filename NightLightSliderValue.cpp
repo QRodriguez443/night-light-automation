@@ -52,14 +52,13 @@ int createNewWindow() {
 //Open settings to night light page and get current slider value
 Result getSliderValue(double newValue) {
     bool windowHide = false;
-    HWND hwnd = NULL;
+    HWND hwnd;
 
     // Get the top-level window of the Settings app
-    for (int i = 0; i <= 4; i++) {
+    while (true) {
+        ShellExecuteW(NULL, L"open", L"ms-settings:nightlight", NULL, NULL, SW_NORMAL);
         hwnd = FindWindowW(L"ApplicationFrameWindow", L"Settings");
         if (!hwnd) {
-            // Launch the Settings app to the Night Light page
-            ShellExecuteW(NULL, L"open", L"ms-settings:nightlight", NULL, NULL, SW_NORMAL);
             std::cerr << "Error finding Settings app window, resolving..." << std::endl;
         } else {
             // Move the window out of the way!
@@ -258,10 +257,11 @@ void changeSliderValue() {
     //Gets the current slider value, then manipulates it
     if (skipNext != true) {
         int newValueToInt = static_cast<int>(newValue); // Convert double to int for logging
-        //PressKey(0x09);
-        //Sleep(500);
-        //PressKey(0x27);
-        //Sleep(500);
+        // Due to occasional bug, need to use key press to change slider value before changing programmatically
+        PressKey(0x09);
+        Sleep(400);
+        PressKey(0x27);
+        Sleep(400);
         
         value = getSliderValue(newValue);
         std::wcout << "Current programmatic slider value: " << sliderPropcInt << ", target value: " << newValueToInt << std::endl;
